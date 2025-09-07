@@ -9,40 +9,114 @@ import {
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { readFileSync } from 'fs';
-import { join } from 'path';
-import { writeFileSync } from 'fs';
-import { tmpdir } from 'os';
+import { join, dirname, resolve } from 'path';
+import { existsSync } from 'fs';
 
-// --- Aggressive Debug Logging ---
-const logPath = join(tmpdir(), 'llm-bridge-debug.log');
-const log = (message: string) => {
-  try {
-    writeFileSync(logPath, `${new Date().toISOString()} - ${message}\n`, { flag: 'a' });
-  } catch (e) {
-    // Cannot write to log file, fallback to console
-    console.error('Failed to write to debug log:', e);
-    console.error('Original log message:', message);
+// --- Enhanced project root detection ---
+function findProjectRoot(startDir: string = process.cwd()): string {
+  const projectIndicators = [
+    'package.json',
+    '.git',
+    'tsconfig.json',
+    '.env',
+    'yarn.lock',
+    'pnpm-lock.yaml',
+    'package-lock.json'
+  ];
+
+  let dir = resolve(startDir);
+  const root = dirname(dir);
+
+  while (dir !== root) {
+    // Check if any project indicator exists in current directory
+    for (const indicator of projectIndicators) {
+      if (existsSync(join(dir, indicator))) {
+        return dir;
+      }
+    }
+    dir = dirname(dir);
   }
-};
 
-log('--- Server Process Started ---');
-log(`Current working directory (process.cwd()): ${process.cwd()}`);
-// --- End Debug Logging ---
+  // If no project root found, return the starting directory
+  return startDir;
+}
 
-// Load environment variables
-try {
-  const envPath = join(process.cwd(), '.env');
-  log(`Attempting to load .env file from: ${envPath}`);
-  dotenv.config({ path: envPath });
-  log('.env loading attempted.');
-  if (process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY) {
-    log('API key(s) found in process.env.');
+// --- Graceful environment configuration loading ---
+function loadEnvironmentConfig(): { projectRoot: string; envLoaded: boolean; warnings: string[] } {
+  const warnings: string[] = [];
+  const projectRoot = findProjectRoot();
+  
+  // Try to load .env from project root
+  const envPath = join(projectRoot, '.env');
+  let envLoaded = false;
+  
+  if (existsSync(envPath)) {
+    try {
+      dotenv.config({ path: envPath });
+      envLoaded = true;
+      console.error(`✓ Loaded environment from: ${envPath}`);
+    } catch (error) {
+      warnings.push(`Failed to load .env file: ${error}`);
+    }
   } else {
-    log('WARNING: No API keys found in process.env after loading .env file.');
+    // Also try current working directory as fallback
+    const cwdEnvPath = join(process.cwd(), '.env');
+    if (existsSync(cwdEnvPath)) {
+      try {
+        dotenv.config({ path: cwdEnvPath });
+        envLoaded = true;
+        console.error(`✓ Loaded environment from: ${cwdEnvPath}`);
+      } catch (error) {
+        warnings.push(`Failed to load .env file from cwd: ${error}`);
+      }
+    }
   }
-} catch (e) {
-  log(`FATAL ERROR during dotenv setup: ${e instanceof Error ? e.stack : String(e)}`);
-  process.exit(1); // Exit if dotenv fails catastrophically
+
+  if (!envLoaded) {
+    console.error(`ℹ No .env file found. Checking system environment variables...`);
+    console.error(`ℹ Project root detected: ${projectRoot}`);
+  }
+
+  return { projectRoot, envLoaded, warnings };
+}
+
+// --- API key validation with warnings ---
+function validateApiKeys(): { hasOpenRouter: boolean; hasGemini: boolean; warnings: string[] } {
+  const warnings: string[] = [];
+  const hasOpenRouter = !!(process.env.OPENROUTER_API_KEY);
+  const hasGemini = !!(process.env.GEMINI_API_KEY);
+
+  if (!hasOpenRouter) {
+    warnings.push('OPENROUTER_API_KEY not found - OpenRouter tools will not work');
+  }
+  
+  if (!hasGemini) {
+    warnings.push('GEMINI_API_KEY not found - Gemini tools will not work');
+  }
+
+  if (!hasOpenRouter && !hasGemini) {
+    warnings.push('No API keys found - the MCP server will be non-functional');
+    warnings.push('Please set OPENROUTER_API_KEY and/or GEMINI_API_KEY environment variables');
+    warnings.push('At least one API key is required for any functionality');
+  }
+
+  return { hasOpenRouter, hasGemini, warnings };
+}
+
+// Initialize environment and validate setup
+const { projectRoot, envLoaded, warnings: envWarnings } = loadEnvironmentConfig();
+const { hasOpenRouter, hasGemini, warnings: apiWarnings } = validateApiKeys();
+
+// Log all warnings but don't exit
+[...envWarnings, ...apiWarnings].forEach(warning => {
+  console.error(`⚠ ${warning}`);
+});
+
+if (hasOpenRouter || hasGemini) {
+  console.error(`✓ MCP Server starting with ${hasOpenRouter ? 'OpenRouter' : ''}${hasOpenRouter && hasGemini ? ' and ' : ''}${hasGemini ? 'Gemini' : ''} support`);
+} else {
+  console.error(`⚠ MCP Server starting with NO FUNCTIONALITY (no API keys available)`);
+  console.error(`⚠ All tools will return errors until you provide API keys`);
 }
 
 // Parse command line arguments for preset
@@ -120,9 +194,9 @@ const allPresets: Record<string, PresetConfig> = { ...builtInPresets, ...customP
 
 // Validate and select preset
 if (!allPresets[selectedPreset]) {
-  console.error(`Error: Preset "${selectedPreset}" not found.`);
+  console.error(`⚠ Warning: Preset "${selectedPreset}" not found. Using default "general" preset.`);
   console.error('Available presets:', Object.keys(allPresets).join(', '));
-  process.exit(1);
+  selectedPreset = 'general';
 }
 
 const activePreset = allPresets[selectedPreset];
@@ -358,7 +432,18 @@ class LLMBridgeServer {
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      throw new Error('OPENROUTER_API_KEY environment variable is required');
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'OPENROUTER_API_KEY environment variable is required',
+              suggestion: 'Please set your OpenRouter API key in the .env file or system environment variables',
+              example: 'OPENROUTER_API_KEY=your_api_key_here'
+            }, null, 2),
+          },
+        ],
+      };
     }
 
     const messages = [];
@@ -422,7 +507,18 @@ class LLMBridgeServer {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY environment variable is required');
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'GEMINI_API_KEY environment variable is required',
+              suggestion: 'Please set your Gemini API key in the .env file or system environment variables',
+              example: 'GEMINI_API_KEY=your_api_key_here'
+            }, null, 2),
+          },
+        ],
+      };
     }
 
     let fullPrompt = prompt;
@@ -496,7 +592,18 @@ class LLMBridgeServer {
     if (provider === 'openrouter') {
       const apiKey = process.env.OPENROUTER_API_KEY;
       if (!apiKey) {
-        throw new Error('OPENROUTER_API_KEY environment variable is required');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                error: 'OPENROUTER_API_KEY environment variable is required for OpenRouter conversations',
+                suggestion: 'Please set your OpenRouter API key in the .env file or system environment variables',
+                example: 'OPENROUTER_API_KEY=your_api_key_here'
+              }, null, 2),
+            },
+          ],
+        };
       }
 
       const response = await axios.post(
@@ -535,7 +642,18 @@ class LLMBridgeServer {
     } else if (provider === 'gemini') {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        throw new Error('GEMINI_API_KEY environment variable is required');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                error: 'GEMINI_API_KEY environment variable is required for Gemini conversations',
+                suggestion: 'Please set your Gemini API key in the .env file or system environment variables',
+                example: 'GEMINI_API_KEY=your_api_key_here'
+              }, null, 2),
+            },
+          ],
+        };
       }
 
       // Convert messages to Gemini format
@@ -593,24 +711,5 @@ class LLMBridgeServer {
   }
 }
 
-// Graceful shutdown and error logging
-process.on('uncaughtException', (error) => {
-  console.error('FATAL: Uncaught exception.', error);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('FATAL: Unhandled promise rejection.', reason);
-  process.exit(1);
-});
-
-try {
-  const server = new LLMBridgeServer();
-  server.run().catch(error => {
-    console.error('FATAL: Server failed to run.', error);
-    process.exit(1);
-  });
-} catch (error) {
-  console.error('FATAL: Failed to initialize server.', error);
-  process.exit(1);
-}
+const server = new LLMBridgeServer();
+server.run().catch(console.error);

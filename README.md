@@ -11,21 +11,7 @@ An MCP (Model Context Protocol) server that enables LLM-to-LLM communication thr
 
 ## 📦 Quick Start
 
-### 1. Create a `.env` File
-
-Create a `.env` file in your project's root directory with your API keys:
-
-```env
-# OpenRouter Configuration
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-OPENROUTER_HTTP_REFERER=http://localhost:3000
-OPENROUTER_X_TITLE=LLM Bridge MCP
-
-# Google Gemini Configuration
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-
-### 2. Configure Your MCP Client
+### 1. Configure Your MCP Client
 
 Add the server to your MCP client's configuration. The recommended way is to use `npx` to run the latest version directly from npm.
 
@@ -42,16 +28,54 @@ Add the server to your MCP client's configuration. The recommended way is to use
   }
 }
 ```
-or locally:
+
+**For local development:**
 
 ```json
- "llm-bridge": 
- {
- "command": "node",
- "args": [
-        "/path/to/your/llm-bridge/dist/index.js"
-  ]
+{
+  "llm-bridge": {
+    "command": "node",
+    "args": [
+      "/path/to/your/llm-bridge/dist/index.js"
+    ]
+  }
 }
+```
+
+### 2. Set Up API Keys (Required)
+
+**Important**: You need at least one API key (OpenRouter or Gemini) for the server to be functional. The server will start without keys but all tools will return errors. You can provide API keys in several ways:
+
+**Option A: Create a `.env` file in your project root:**
+
+```env
+# OpenRouter Configuration
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+OPENROUTER_HTTP_REFERER=http://localhost:3000
+OPENROUTER_X_TITLE=LLM Bridge MCP
+
+# Google Gemini Configuration
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+**Option B: Set system environment variables:**
+
+```bash
+# Windows
+set OPENROUTER_API_KEY=your_openrouter_api_key_here
+set GEMINI_API_KEY=your_gemini_api_key_here
+
+# Linux/Mac
+export OPENROUTER_API_KEY=your_openrouter_api_key_here
+export GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+**Option C: Set in your shell profile (permanent):**
+
+Add to your `.bashrc`, `.zshrc`, or equivalent:
+```bash
+export OPENROUTER_API_KEY=your_openrouter_api_key_here
+export GEMINI_API_KEY=your_gemini_api_key_here
 ```
 ## 🛠️ Available Tools
 
