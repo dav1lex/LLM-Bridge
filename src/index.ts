@@ -12,7 +12,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ path: join(process.cwd(), '.env') });
 
 // Parse command line arguments for preset
 const args = process.argv.slice(2);
