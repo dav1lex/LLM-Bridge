@@ -214,7 +214,7 @@ const mcpConfig = {
       temperature: activePreset.temperature
     },
     gemini: {
-      model: activePreset.provider === 'gemini' ? activePreset.model : 'gemini-2.0-flash-exp',
+      model: activePreset.provider === 'gemini' ? activePreset.model : 'gemini-2.5-pro',
       max_tokens: activePreset.max_tokens,
       temperature: activePreset.temperature
     },
