@@ -35,7 +35,7 @@ interface PresetConfig {
 
 type PresetName = 'general' | 'coding';
 
-// Define built-in presets - simplified to just 2
+// Define built-in presets
 const builtInPresets: Record<PresetName, PresetConfig> = {
   general: {
     provider: 'openrouter',

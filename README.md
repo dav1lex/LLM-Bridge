@@ -29,7 +29,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 Add the server to your MCP client's configuration. The recommended way is to use `npx` to run the latest version directly from npm.
 
-**Example for RovoDev:**
+**Example for RovoDev / RooCode:**
 
 ```json
 {
@@ -37,12 +37,22 @@ Add the server to your MCP client's configuration. The recommended way is to use
     "command": "npx",
     "args": [
       "-y",
-      "@modelcontextprotocol/server-llm-bridge"
+      "@dav1lex/server-llm-bridge"
     ]
   }
 }
 ```
+or locally:
 
+```json
+ "llm-bridge": 
+ {
+ "command": "node",
+ "args": [
+        "/path/to/your/llm-bridge/dist/index.js"
+  ]
+}
+```
 ## 🛠️ Available Tools
 
 ### 1. `ask_openrouter_llm`
@@ -107,7 +117,7 @@ Then, update your MCP client to run the local version with `node`:
   "llm-bridge": {
     "command": "node",
     "args": [
-      "/path/to/your/llm-bridge/dist/index.js"
+      "c:/Users/admin/LLM-Bridge/dist/index.js"
     ]
   }
 }
