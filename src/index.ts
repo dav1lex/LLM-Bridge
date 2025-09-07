@@ -562,5 +562,24 @@ class LLMBridgeServer {
   }
 }
 
-const server = new LLMBridgeServer();
-server.run().catch(console.error);
+// Graceful shutdown and error logging
+process.on('uncaughtException', (error) => {
+  console.error('FATAL: Uncaught exception.', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('FATAL: Unhandled promise rejection.', reason);
+  process.exit(1);
+});
+
+try {
+  const server = new LLMBridgeServer();
+  server.run().catch(error => {
+    console.error('FATAL: Server failed to run.', error);
+    process.exit(1);
+  });
+} catch (error) {
+  console.error('FATAL: Failed to initialize server.', error);
+  process.exit(1);
+}
