@@ -8,9 +8,120 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 // Load environment variables
 dotenv.config();
+
+// Parse command line arguments for preset
+const args = process.argv.slice(2);
+let selectedPreset = 'general';
+
+// Look for --preset argument
+const presetIndex = args.indexOf('--preset');
+if (presetIndex !== -1 && args[presetIndex + 1]) {
+  selectedPreset = args[presetIndex + 1];
+}
+
+// Define preset types
+interface PresetConfig {
+  provider: 'openrouter' | 'gemini';
+  model: string;
+  max_tokens: number;
+  temperature: number;
+  description: string;
+}
+
+type PresetName = 'general' | 'coding';
+
+// Define built-in presets - simplified to just 2
+const builtInPresets: Record<PresetName, PresetConfig> = {
+  general: {
+    provider: 'openrouter',
+    model: 'deepseek/deepseek-chat-v3.1:free',
+    max_tokens: 8192,
+    temperature: 0.7,
+    description: 'Balanced settings for general use'
+  },
+  coding: {
+    provider: 'openrouter', 
+    model: 'deepseek/deepseek-chat-v3.1:free',
+    max_tokens: 8192,
+    temperature: 0.1,
+    description: 'Optimized for programming tasks with high token limit and low temperature'
+  }
+};
+
+// example models
+const availableModels = {
+  openrouter: {
+    free: [
+      'deepseek/deepseek-chat-v3.1:free',
+      'openai/gpt-oss-120b:free',
+      'z-ai/glm-4.5-air:free'
+    ],
+    paid: [
+      'moonshotai/kimi-k2-0905',
+      'x-ai/grok-code-fast-1'
+    ]
+  },
+  gemini: [
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash'
+  ]
+};
+
+// Load custom presets from config file (optional)
+let customPresets: Record<string, PresetConfig> = {};
+try {
+  const configPath = join(process.cwd(), 'mcp-config.json');
+  const configFile = JSON.parse(readFileSync(configPath, 'utf8'));
+  customPresets = configFile.presets || {};
+} catch (error) {
+  // Config file is optional, continue with built-in presets only
+}
+
+// Combine built-in and custom presets
+const allPresets: Record<string, PresetConfig> = { ...builtInPresets, ...customPresets };
+
+// Validate and select preset
+if (!allPresets[selectedPreset]) {
+  console.error(`Error: Preset "${selectedPreset}" not found.`);
+  console.error('Available presets:', Object.keys(allPresets).join(', '));
+  process.exit(1);
+}
+
+const activePreset = allPresets[selectedPreset];
+console.error(`LLM Bridge starting with preset: ${selectedPreset}`);
+console.error(`Description: ${activePreset.description}`);
+console.error(`Model: ${activePreset.model} (${activePreset.provider})`);
+console.error(`Tokens: ${activePreset.max_tokens}, Temperature: ${activePreset.temperature}`);
+
+// Create config object based on selected preset
+const mcpConfig = {
+  defaults: {
+    openrouter: {
+      model: activePreset.provider === 'openrouter' ? activePreset.model : 'deepseek/deepseek-chat-v3.1:free',
+      max_tokens: activePreset.max_tokens,
+      temperature: activePreset.temperature
+    },
+    gemini: {
+      model: activePreset.provider === 'gemini' ? activePreset.model : 'gemini-2.0-flash-exp',
+      max_tokens: activePreset.max_tokens,
+      temperature: activePreset.temperature
+    },
+    conversation: {
+      provider: activePreset.provider,
+      max_tokens: activePreset.max_tokens,
+      temperature: activePreset.temperature
+    }
+  },
+  presets: allPresets
+};
+
 
 interface LLMResponse {
   content: string;
@@ -22,6 +133,7 @@ interface LLMResponse {
     total_tokens: number;
   };
 }
+
 
 class LLMBridgeServer {
   private server: Server;
@@ -53,18 +165,22 @@ class LLMBridgeServer {
                 },
                 model: {
                   type: 'string',
-                  description: 'The model to use. Popular options: "deepseek/deepseek-chat-v3.1:free" (free), "anthropic/claude-3-sonnet", "openai/gpt-4", "meta-llama/llama-3.1-70b-instruct"',
-                  default: 'deepseek/deepseek-chat-v3.1:free',
+                  description: `The model to use. Available options: ${availableModels.openrouter.free.join(', ')} (free), ${availableModels.openrouter.paid.join(', ')} (paid)`,
+                  default: mcpConfig.defaults.openrouter.model,
                 },
                 max_tokens: {
                   type: 'number',
                   description: 'Maximum tokens in response',
-                  default: 1000,
+                  default: mcpConfig.defaults.openrouter.max_tokens,
                 },
                 temperature: {
                   type: 'number',
                   description: 'Temperature for response generation (0-1)',
-                  default: 0.7,
+                  default: mcpConfig.defaults.openrouter.temperature,
+                },
+                preset: {
+                  type: 'string',
+                  description: `Use a predefined configuration preset: ${Object.keys(mcpConfig.presets || {}).join(', ')}`,
                 },
                 system_prompt: {
                   type: 'string',
@@ -86,18 +202,22 @@ class LLMBridgeServer {
                 },
                 model: {
                   type: 'string',
-                  description: 'The Gemini model to use. Options: "gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"',
-                  default: 'gemini-2.0-flash-exp',
+                  description: `The Gemini model to use. Options: ${availableModels.gemini.join(', ')}`,
+                  default: mcpConfig.defaults.gemini.model,
                 },
                 max_tokens: {
                   type: 'number',
                   description: 'Maximum tokens in response',
-                  default: 1000,
+                  default: mcpConfig.defaults.gemini.max_tokens,
                 },
                 temperature: {
                   type: 'number',
                   description: 'Temperature for response generation (0-1)',
-                  default: 0.7,
+                  default: mcpConfig.defaults.gemini.temperature,
+                },
+                preset: {
+                  type: 'string',
+                  description: `Use a predefined configuration preset: ${Object.keys(mcpConfig.presets || {}).join(', ')}`,
                 },
                 system_prompt: {
                   type: 'string',
@@ -134,7 +254,7 @@ class LLMBridgeServer {
                   type: 'string',
                   enum: ['openrouter', 'gemini'],
                   description: 'Which provider to use',
-                  default: 'openrouter',
+                  default: mcpConfig.defaults.conversation.provider,
                 },
                 model: {
                   type: 'string',
@@ -142,11 +262,15 @@ class LLMBridgeServer {
                 },
                 max_tokens: {
                   type: 'number',
-                  default: 1000,
+                  default: mcpConfig.defaults.conversation.max_tokens,
                 },
                 temperature: {
                   type: 'number',
-                  default: 0.7,
+                  default: mcpConfig.defaults.conversation.temperature,
+                },
+                preset: {
+                  type: 'string',
+                  description: `Use a predefined configuration preset: ${Object.keys(mcpConfig.presets || {}).join(', ')}`,
                 },
               },
               required: ['messages'],
@@ -186,11 +310,20 @@ class LLMBridgeServer {
   private async handleOpenRouterRequest(args: any) {
     const {
       prompt,
-      model = 'deepseek/deepseek-chat-v3.1:free',
-      max_tokens = 1000,
-      temperature = 0.7,
+      model = mcpConfig.defaults.openrouter.model,
+      max_tokens = mcpConfig.defaults.openrouter.max_tokens,
+      temperature = mcpConfig.defaults.openrouter.temperature,
       system_prompt,
+      preset,
     } = args;
+
+    // Apply preset if specified
+    let finalMaxTokens = max_tokens;
+    let finalTemperature = temperature;
+    if (preset && allPresets[preset as string]) {
+      finalMaxTokens = allPresets[preset as string].max_tokens || max_tokens;
+      finalTemperature = allPresets[preset as string].temperature || temperature;
+    }
 
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
@@ -208,8 +341,8 @@ class LLMBridgeServer {
       {
         model,
         messages,
-        max_tokens,
-        temperature,
+        max_tokens: finalMaxTokens,
+        temperature: finalTemperature,
       },
       {
         headers: {
@@ -241,11 +374,20 @@ class LLMBridgeServer {
   private async handleGeminiRequest(args: any) {
     const {
       prompt,
-      model = 'gemini-2.0-flash-exp',
-      max_tokens = 1000,
-      temperature = 0.7,
+      model = mcpConfig.defaults.gemini.model,
+      max_tokens = mcpConfig.defaults.gemini.max_tokens,
+      temperature = mcpConfig.defaults.gemini.temperature,
       system_prompt,
+      preset,
     } = args;
+
+    // Apply preset if specified
+    let finalMaxTokens = max_tokens;
+    let finalTemperature = temperature;
+    if (preset && allPresets[preset as string]) {
+      finalMaxTokens = allPresets[preset as string].max_tokens || max_tokens;
+      finalTemperature = allPresets[preset as string].temperature || temperature;
+    }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -270,8 +412,8 @@ class LLMBridgeServer {
           },
         ],
         generationConfig: {
-          maxOutputTokens: max_tokens,
-          temperature,
+          maxOutputTokens: finalMaxTokens,
+          temperature: finalTemperature,
         },
       },
       {
@@ -305,11 +447,20 @@ class LLMBridgeServer {
   private async handleConversationRequest(args: any) {
     const {
       messages,
-      provider = 'openrouter',
+      provider = mcpConfig.defaults.conversation.provider,
       model,
-      max_tokens = 1000,
-      temperature = 0.7,
+      max_tokens = mcpConfig.defaults.conversation.max_tokens,
+      temperature = mcpConfig.defaults.conversation.temperature,
+      preset,
     } = args;
+
+    // Apply preset if specified
+    let finalMaxTokens = max_tokens;
+    let finalTemperature = temperature;
+    if (preset && allPresets[preset as string]) {
+      finalMaxTokens = allPresets[preset as string].max_tokens || max_tokens;
+      finalTemperature = allPresets[preset as string].temperature || temperature;
+    }
 
     if (provider === 'openrouter') {
       const apiKey = process.env.OPENROUTER_API_KEY;
@@ -320,10 +471,10 @@ class LLMBridgeServer {
       const response = await axios.post(
         'https://openrouter.ai/api/v1/chat/completions',
         {
-          model: model || 'deepseek/deepseek-chat-v3.1:free',
+          model: model || mcpConfig.defaults.openrouter.model,
           messages,
-          max_tokens,
-          temperature,
+          max_tokens: finalMaxTokens,
+          temperature: finalTemperature,
         },
         {
           headers: {
@@ -365,12 +516,12 @@ class LLMBridgeServer {
         }));
 
       const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-2.0-flash-exp'}:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model || mcpConfig.defaults.gemini.model}:generateContent?key=${apiKey}`,
         {
           contents,
           generationConfig: {
-            maxOutputTokens: max_tokens,
-            temperature,
+            maxOutputTokens: finalMaxTokens,
+            temperature: finalTemperature,
           },
         },
         {
@@ -382,7 +533,7 @@ class LLMBridgeServer {
 
       const result: LLMResponse = {
         content: response.data.candidates[0].content.parts[0].text,
-        model: model || 'gemini-2.0-flash-exp',
+        model: model || mcpConfig.defaults.gemini.model,
         provider: 'gemini',
         usage: {
           prompt_tokens: response.data.usageMetadata?.promptTokenCount || 0,
