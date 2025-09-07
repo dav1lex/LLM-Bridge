@@ -10,9 +10,40 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+
+// --- Aggressive Debug Logging ---
+const logPath = join(tmpdir(), 'llm-bridge-debug.log');
+const log = (message: string) => {
+  try {
+    writeFileSync(logPath, `${new Date().toISOString()} - ${message}\n`, { flag: 'a' });
+  } catch (e) {
+    // Cannot write to log file, fallback to console
+    console.error('Failed to write to debug log:', e);
+    console.error('Original log message:', message);
+  }
+};
+
+log('--- Server Process Started ---');
+log(`Current working directory (process.cwd()): ${process.cwd()}`);
+// --- End Debug Logging ---
 
 // Load environment variables
-dotenv.config({ path: join(process.cwd(), '.env') });
+try {
+  const envPath = join(process.cwd(), '.env');
+  log(`Attempting to load .env file from: ${envPath}`);
+  dotenv.config({ path: envPath });
+  log('.env loading attempted.');
+  if (process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY) {
+    log('API key(s) found in process.env.');
+  } else {
+    log('WARNING: No API keys found in process.env after loading .env file.');
+  }
+} catch (e) {
+  log(`FATAL ERROR during dotenv setup: ${e instanceof Error ? e.stack : String(e)}`);
+  process.exit(1); // Exit if dotenv fails catastrophically
+}
 
 // Parse command line arguments for preset
 const args = process.argv.slice(2);
