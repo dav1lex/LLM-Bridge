@@ -1,4 +1,6 @@
 # LLM Bridge MCP Server
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue?logo=github)](https://github.com/dav1lex/LLM-Bridge)
+[![npm version](https://img.shields.io/npm/v/@dav1lex/server-llm-bridge.svg)](https://www.npmjs.com/package/@dav1lex/server-llm-bridge)
 
 An MCP (Model Context Protocol) server that enables LLM-to-LLM communication through OpenRouter and Google Gemini APIs.
 
@@ -10,6 +12,10 @@ An MCP (Model Context Protocol) server that enables LLM-to-LLM communication thr
 - **High Token Limits**: Supports up to 8192 tokens for handling large codebases and complex discussions.
 
 ## 📦 Quick Start
+
+### How to Use
+
+After attaching to your terminal/code editor, you can basically send a prompt like this `call llm-bridge mcp server to ask another LLM about his opinion, use [modelname](optional), find the most optional solution`. The LLM will decide what tool to use if not guided. 
 
 ### 1. Configure Your MCP Client
 
